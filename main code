@@ -1,0 +1,247 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Direct: private file transfer</title>
+<meta name="description" content="Send files device to device with a 6-character code or QR. No uploads, no accounts, encrypted end to end.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 100 100%27><text y=%27.9em%27 font-size=%2790%27>🔒</text></svg>">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;600;800&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#eef1f5;--panel:#fff;--ink:#101a26;--mute:#5b6878;--line:#d5dce6;--acc:#2f5bff;--accink:#fff;--ok:#0f8a5f;--bad:#c23b3b;box-sizing:border-box}
+@media(prefers-color-scheme:dark){:root{--bg:#121821;--panel:#1a2230;--ink:#e8edf5;--mute:#93a0b3;--line:#2b3547;--acc:#7a98ff;--accink:#0c1220;--ok:#4cd59b;--bad:#ff8585;color-scheme:dark}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.55 "Bricolage Grotesque",system-ui,-apple-system,"Segoe UI",sans-serif;padding:env(safe-area-inset-top,0) 0 env(safe-area-inset-bottom,0)}
+main{max-width:660px;margin:0 auto;padding:40px 20px 64px}
+h1{font-size:clamp(2.4rem,9vw,3.6rem);line-height:1;margin:0 0 12px;font-weight:800;letter-spacing:-.03em}
+.lead{color:var(--mute);margin:0 0 24px;max-width:52ch}
+canvas{width:100%;height:76px;display:block}
+.speed{display:flex;justify-content:space-between;color:var(--mute);font-size:.9rem;margin:4px 0 22px}
+.tabs{display:flex;gap:4px;background:var(--line);padding:4px;border-radius:12px;margin-bottom:16px}
+.tabs button{flex:1;border:0;background:transparent;color:var(--mute);font:inherit;font-weight:600;padding:10px;border-radius:9px;cursor:pointer}
+.tabs button[aria-selected=true]{background:var(--panel);color:var(--ink)}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:22px}
+[hidden]{display:none!important}
+h2{font-size:1.05rem;margin:0 0 10px}
+.drop{display:block;border:2px dashed var(--line);border-radius:12px;padding:26px;text-align:center;color:var(--mute);cursor:pointer}
+.drop.over,.drop:hover{border-color:var(--acc);color:var(--ink)}
+.drop input{display:none}
+.btn{border:0;background:var(--acc);color:var(--accink);font:inherit;font-weight:600;padding:11px 18px;border-radius:10px;cursor:pointer;margin-top:12px}
+.btn.alt{background:var(--line);color:var(--ink);margin-left:6px}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+:focus-visible{outline:3px solid var(--acc);outline-offset:2px}
+.share{display:grid;grid-template-columns:1fr auto;gap:22px;align-items:center}
+@media(max-width:520px){.share{grid-template-columns:1fr}}
+.code{display:flex;gap:6px}
+.code span,.boxes input{width:46px;height:60px;border:1px solid var(--line);border-radius:10px;background:var(--bg);display:grid;place-items:center;font-size:1.7rem;font-weight:800;text-align:center;color:var(--ink);font-family:inherit;padding:0}
+.boxes{display:flex;gap:6px}
+.qr{width:150px;background:#fff;padding:6px;border-radius:10px;line-height:0}
+.qr svg{width:100%;height:auto}
+.hint{color:var(--mute);font-size:.9rem;margin:8px 0 0}
+#status{margin:18px 0 0;font-weight:600;min-height:1.5em}
+.rows{display:grid;gap:10px;margin-top:14px}
+.row{border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:.92rem}
+.row .top{display:flex;justify-content:space-between;gap:10px}
+.row .name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bar{height:6px;background:var(--line);border-radius:3px;margin-top:8px;overflow:hidden}
+.bar i{display:block;height:100%;width:0;background:var(--acc);transition:width .15s}
+.ok{color:var(--ok)}.bad{color:var(--bad)}
+a.save{color:var(--acc);font-weight:600}
+.ask{border:1px solid var(--acc);border-radius:12px;padding:14px;margin-top:16px}
+@media(prefers-reduced-motion:reduce){.bar i{transition:none}}
+</style>
+</head>
+<body>
+<main>
+<h1>Direct</h1>
+<p class="lead">Send files straight from one device to another with a 6-character code or a QR scan. Nothing is uploaded to a server, and everything is encrypted on the way.</p>
+<canvas id="cv" aria-hidden="true"></canvas>
+<div class="speed"><span id="spd">Not connected</span><span id="tot"></span></div>
+
+<div class="tabs" role="tablist">
+<button role="tab" id="tS" aria-selected="true">Send</button>
+<button role="tab" id="tR" aria-selected="false">Receive</button>
+</div>
+
+<section class="panel" id="pS">
+<div id="s1">
+<h2>Choose files to send</h2>
+<label class="drop" id="drop"><input type="file" id="pick" multiple><span id="dropTxt">Drop files here or click to choose</span></label>
+<button class="btn" id="mk" disabled>Get code</button>
+</div>
+<div id="s2" hidden>
+<h2>Enter this code on the other device</h2>
+<div class="share">
+<div><div class="code" id="codeBox" aria-label="Transfer code"></div>
+<button class="btn alt" style="margin-left:0" id="cpLink">Copy link</button>
+<p class="hint">Or scan the QR with the receiver’s camera. The code works once and expires when you close this page.</p></div>
+<div class="qr" id="qr"></div>
+</div>
+<div class="ask" id="ask" hidden>
+<strong>A device wants to connect.</strong> Only accept if this is the person you’re sending to.
+<div><button class="btn" id="yes">Accept and send</button><button class="btn alt" id="no">Decline</button></div>
+</div>
+</div>
+</section>
+
+<section class="panel" id="pR" hidden>
+<h2>Enter the 6-character code</h2>
+<div class="boxes" id="boxes"></div>
+<button class="btn" id="join" disabled>Connect</button>
+<p class="hint">Scanned a QR? The code fills in automatically.</p>
+</section>
+
+<p id="status" role="status"></p>
+<div class="rows" id="rows"></div>
+<p class="hint" style="margin-top:28px">Files go device to device over an encrypted WebRTC channel. If a direct path is blocked, a relay passes along encrypted bytes it cannot read. Each file is checked for size and, up to 200 MB, a SHA-256 fingerprint, so a damaged file is flagged instead of saved silently.</p>
+</main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.4/peerjs.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
+<script>
+const $=s=>document.querySelector(s);
+const ALPHA='ABCDEFGHJKLMNPQRSTUVWXYZ23456789',PRE='dtx-';
+const CFG={config:{iceServers:[{urls:'stun:stun.l.google.com:19302'},{urls:['turn:openrelay.metered.ca:80','turn:openrelay.metered.ca:443','turn:openrelay.metered.ca:443?transport=tcp'],username:'openrelayproject',credential:'openrelayproject'}]}};
+const BLOCK=1<<20,CH=64*1024,HASH_MAX=200*1024*1024;
+let peer,conn,pending,files=[],tx=0,speed=0,connected=false,busy=false;
+const fmt=b=>b<1024?b+' B':b<1048576?(b/1024).toFixed(1)+' KB':b<1073741824?(b/1048576).toFixed(1)+' MB':(b/1073741824).toFixed(2)+' GB';
+const hex=buf=>[...new Uint8Array(buf)].map(x=>x.toString(16).padStart(2,'0')).join('');
+const sha=async blob=>hex(await crypto.subtle.digest('SHA-256',await blob.arrayBuffer()));
+const status=(t,c)=>{const s=$('#status');s.textContent=t;s.className=c||''};
+const newCode=()=>[...crypto.getRandomValues(new Uint8Array(6))].map(x=>ALPHA[x%32]).join('');
+
+/* tabs */
+function tab(r){$('#pS').hidden=r;$('#pR').hidden=!r;$('#tS').setAttribute('aria-selected',!r);$('#tR').setAttribute('aria-selected',r)}
+$('#tS').onclick=()=>tab(false);$('#tR').onclick=()=>tab(true);
+
+/* file choice */
+const setFiles=l=>{files=[...l];$('#mk').disabled=!files.length;
+  $('#dropTxt').textContent=files.length?files.length+' file'+(files.length>1?'s':'')+' · '+fmt(files.reduce((a,f)=>a+f.size,0)):'Drop files here or click to choose'};
+$('#pick').onchange=e=>setFiles(e.target.files);
+const dz=$('#drop');
+['dragover','dragenter'].forEach(n=>dz.addEventListener(n,e=>{e.preventDefault();dz.classList.add('over')}));
+['dragleave','drop'].forEach(n=>dz.addEventListener(n,e=>{e.preventDefault();dz.classList.remove('over')}));
+dz.addEventListener('drop',e=>setFiles(e.dataTransfer.files));
+
+/* ---------- sender ---------- */
+function host(){
+  const code=newCode();status('Getting a code…');
+  peer=new Peer(PRE+code,CFG);
+  peer.on('open',()=>{
+    $('#s1').hidden=true;$('#s2').hidden=false;
+    $('#codeBox').innerHTML=[...code].map(c=>`<span>${c}</span>`).join('');
+    const link=location.origin+location.pathname+'#'+code;
+    const q=qrcode(0,'M');q.addData(link);q.make();$('#qr').innerHTML=q.createSvgTag({cellSize:4,margin:0,scalable:true});
+    $('#cpLink').onclick=async()=>{try{await navigator.clipboard.writeText(link);$('#cpLink').textContent='Copied';setTimeout(()=>$('#cpLink').textContent='Copy link',1500)}catch(e){prompt('Copy this link',link)}};
+    status('Waiting for the receiver…')});
+  peer.on('error',e=>{if(e.type==='unavailable-id'){peer.destroy();host()}else status('Could not reach the connection service. Check your internet and reload.','bad')});
+  peer.on('connection',c=>{
+    if(conn||pending){c.close();return}
+    pending=c;
+    c.on('open',()=>{$('#ask').hidden=false;status('A device is asking to connect.')});
+    c.on('close',()=>{if(pending===c){pending=null;$('#ask').hidden=true}});
+  });
+}
+$('#mk').onclick=host;
+$('#no').onclick=()=>{pending&&pending.close();pending=null;$('#ask').hidden=true;status('Declined. Still waiting…')};
+$('#yes').onclick=()=>{conn=pending;pending=null;$('#ask').hidden=true;peer.disconnect();watch(conn);sendAll()};
+
+function watch(c){connected=true;c.on('close',()=>{connected=false;if(!busy)status('Connection closed.')});
+  c.on('error',()=>{connected=false;status('Connection lost. Start again with a new code.','bad')})}
+
+const rowEl=(name,size)=>{const r=document.createElement('div');r.className='row';
+  r.innerHTML='<div class="top"><span class="name"></span><span class="meta"></span></div><div class="bar"><i></i></div>';
+  r.querySelector('.name').textContent=name;r.querySelector('.meta').textContent=fmt(size);$('#rows').append(r);return r};
+
+async function sendAll(){
+  const dc=conn.dataChannel;dc.bufferedAmountLowThreshold=1<<20;busy=true;status('Sending…');
+  const wait=()=>dc.bufferedAmount<4*BLOCK?Promise.resolve():new Promise(r=>dc.onbufferedamountlow=()=>{dc.onbufferedamountlow=null;r()});
+  try{
+    for(const f of files){
+      const row=rowEl(f.name,f.size),bar=row.querySelector('i'),meta=row.querySelector('.meta');
+      const hash=f.size<=HASH_MAX?await sha(f):null;
+      dc.send(JSON.stringify({t:'meta',name:f.name,size:f.size,type:f.type,hash}));
+      for(let off=0;off<f.size;){
+        const buf=await f.slice(off,off+BLOCK).arrayBuffer();
+        for(let p=0;p<buf.byteLength;p+=CH){await wait();const part=buf.slice(p,p+CH);dc.send(part);tx+=part.byteLength}
+        off+=buf.byteLength;bar.style.width=(off/f.size*100)+'%'}
+      dc.send(JSON.stringify({t:'end'}));meta.textContent='Sent';meta.className='meta ok'}
+    dc.send(JSON.stringify({t:'done'}));status('All files sent.','ok');
+  }catch(e){status('Sending stopped. Start again with a new code.','bad')}
+  busy=false}
+
+/* ---------- receiver ---------- */
+const boxes=$('#boxes');
+for(let i=0;i<6;i++){const b=document.createElement('input');b.maxLength=1;b.autocomplete='off';b.setAttribute('aria-label','Character '+(i+1));
+  b.oninput=()=>{b.value=b.value.toUpperCase().replace(/[^A-Z2-9]/g,'');if(b.value&&i<5)boxes.children[i+1].focus();sync()};
+  b.onkeydown=e=>{if(e.key==='Backspace'&&!b.value&&i>0)boxes.children[i-1].focus()};
+  b.onpaste=e=>{e.preventDefault();fill((e.clipboardData.getData('text')||'').toUpperCase().replace(/[^A-Z2-9]/g,''))};
+  boxes.append(b)}
+const fill=s=>{[...boxes.children].forEach((b,i)=>b.value=s[i]||'');sync()};
+const val=()=>[...boxes.children].map(b=>b.value).join('');
+const sync=()=>$('#join').disabled=val().length!==6;
+$('#join').onclick=()=>connect(val());
+
+function connect(code){
+  $('#join').disabled=true;status('Looking for the sender…');
+  peer&&peer.destroy();peer=new Peer(undefined,CFG);
+  peer.on('error',e=>{status(e.type==='peer-unavailable'?'No sender found for that code. Check it and try again.':'Could not connect. Check your internet and try again.','bad');sync()});
+  peer.on('open',()=>{
+    conn=peer.connect(PRE+code,{reliable:true,serialization:'raw'});
+    conn.on('open',()=>{conn.dataChannel.binaryType='arraybuffer';watch(conn);status('Connected. Waiting for the sender to accept…');receive(conn)});
+    conn.on('close',()=>{if(!busy){connected=false}});
+  });
+}
+function receive(c){
+  let cur=null;
+  c.on('data',d=>{
+    if(typeof d==='string'){
+      const m=JSON.parse(d);
+      if(m.t==='meta'){cur={...m,parts:[],got:0,row:rowEl(m.name,m.size)};busy=true;status('Receiving…')}
+      else if(m.t==='end'){const f=cur;cur=null;finish(f)}
+      else if(m.t==='done'){busy=false;status('All files received. Save each one below.','ok')}
+    }else if(cur){cur.parts.push(d);cur.got+=d.byteLength;tx+=d.byteLength;
+      cur.row.querySelector('i').style.width=(cur.got/cur.size*100)+'%'}});
+}
+async function finish(f){
+  const meta=f.row.querySelector('.meta'),blob=new Blob(f.parts,{type:f.type});f.parts=[];
+  if(blob.size!==f.size){meta.textContent='Incomplete, ask the sender to resend';meta.className='meta bad';return}
+  let note='Size matched';
+  if(f.hash){if(await sha(blob)!==f.hash){meta.textContent='Damaged, do not use';meta.className='meta bad';return}note='Verified'}
+  const a=document.createElement('a');a.className='save';a.textContent='Save';a.href=URL.createObjectURL(blob);a.download=f.name;
+  meta.textContent=note+' · ';meta.className='meta ok';meta.append(a)}
+
+addEventListener('beforeunload',e=>{if(busy){e.preventDefault();e.returnValue=''}});
+
+/* auto-join from QR link: site#CODE */
+const h=location.hash.slice(1).toUpperCase();
+if(/^[A-HJ-NP-Z2-9]{6}$/.test(h)){tab(true);fill(h);history.replaceState(null,'',location.pathname);connect(h)}
+
+/* speed readout */
+let last=0;
+setInterval(()=>{speed=(tx-last)/.5;last=tx;
+  $('#spd').textContent=connected?(speed>0?fmt(speed)+'/s':'Connected'):'Not connected';
+  $('#tot').textContent=tx?fmt(tx)+' moved':''},500);
+
+/* stream visual: particles speed up with throughput */
+const cv=$('#cv'),g=cv.getContext('2d');let W,H,vis=0;const dots=[];
+const size=()=>{const r=cv.getBoundingClientRect(),k=devicePixelRatio||1;W=cv.width=r.width*k;H=cv.height=r.height*k};
+size();addEventListener('resize',size);
+for(let i=0;i<46;i++)dots.push({x:Math.random(),y:Math.random(),s:.4+Math.random()});
+const reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
+(function frame(){
+  const st=getComputedStyle(document.documentElement),acc=st.getPropertyValue('--acc'),line=st.getPropertyValue('--line'),ink=st.getPropertyValue('--ink');
+  const k=devicePixelRatio||1,cy=H/2,m=34*k;g.clearRect(0,0,W,H);
+  vis+=(Math.min(speed/4e6,1)-vis)*.05;
+  g.strokeStyle=line;g.lineWidth=2*k;g.beginPath();g.moveTo(m,cy);g.lineTo(W-m,cy);g.stroke();
+  for(const p of dots){
+    if(!reduce)p.x+=((connected?.0016:.0004)+vis*.012)*p.s;if(p.x>1){p.x=0;p.y=Math.random()}
+    const x=m+p.x*(W-2*m),y=cy+(p.y-.5)*H*.55*(1-Math.sin(p.x*Math.PI)*.75);
+    g.globalAlpha=connected?.35+.65*Math.sin(p.x*Math.PI):.15;g.fillStyle=acc;
+    g.beginPath();g.arc(x,y,(1.6+p.s*1.2)*k,0,6.3);g.fill()}
+  g.globalAlpha=1;g.fillStyle=ink;
+  for(const x of[m,W-m]){g.beginPath();g.arc(x,cy,9*k,0,6.3);g.fill()}
+  requestAnimationFrame(frame)})();
+</script>
+</body>
+</html>
